@@ -6,7 +6,6 @@
 #include<stdlib.h>
 #include<math.h>
 
-
 #define NUM_ATOMS 81
 #define DEBUG 0
 #define ERROR(msg)\

@@ -8,6 +8,10 @@
 
 
 #define NUM_ATOMS 81
+#define DEBUG 0
+#define ERROR(msg)\
+    fprintf(stderr, "%s,%d ", __func__, __LINE__);\
+    fprintf(stderr, "%s", msg);
 
 extern __global__ void coulombMatrix(double *pos, double *col, int *chargeptr, int nx, int ny, int cutoff, double bc);
 extern __global__ void coulombMatrixLT(double *col, int nx, int ny);
@@ -335,10 +339,13 @@ void *main_job_cuda(void *count)
 
 }
 
+/**
+ * Parse the data
+ */
+
 void *parse_pos_file(void *arg)
 {
     unsigned int i = 0;
-    //char *buf;
     int count = 0;
     pthread_t threads[NTHREADS];
     void * retvals[NTHREADS];
@@ -347,8 +354,10 @@ void *parse_pos_file(void *arg)
     printf(" Thread 2");
     // cond_wait
     pthread_mutex_lock(&cond_var_lock);
+
     while(frame_bufs[0] == 0)
         pthread_cond_wait(&cond_var, &cond_var_lock);
+
     pthread_mutex_unlock(&cond_var_lock);
 
     //printf("\n comes here --1");
@@ -361,7 +370,6 @@ void *parse_pos_file(void *arg)
     // launch 50 threads which parses the pos frame buffer and performs cuda operations in parallel.
     // each of the thread creates the coulomb matrix, does submatrix reductions and computes eigen values.
     // the eigen values are finally written as hdf5 files.
-//    int k = 0;
     for(count = 0; count < NTHREADS; count++)
     {
         fflush(stdout);
@@ -383,38 +391,11 @@ void *parse_pos_file(void *arg)
 	}
     }
 
-#if 0
-// parser for each frame
-    double frame[NUM_ATOMS][3];
-    unsigned int j = 0;
-    char temp1[18], temp2[18], temp3[18];
-    buf = frame_bufs[0] + line1_size + line2_size;
-    //i += line1_size + line2_size;
-    while(j < NUM_ATOMS){
-        memcpy(temp1, buf + 6, 18);
-	memcpy(temp2, buf + 32, 18);
-	memcpy(temp3, buf + 58, 18);
-	for(i = 0; i < 18; i++)
-	    printf(" %c", temp3[i]);
-        printf("\n");
-        sscanf(temp1, "%lf", &frame[j][0]);
-	sscanf(temp2, "%lf", &frame[j][1]);
-	sscanf(temp3, "%lf", &frame[j][2]);
-	j += 1;
-	buf += line3_size;
-    }
-#endif 
-
-#if 0
-    for(j = 0; j < NUM_ATOMS; j++){
-        for(i = 0; i < 3; i++){
-            printf(" %.17g", frame[j][i]);
-	    }
-	printf("\n");
-    }
-#endif
-
 }
+
+/*
+ * Reads the position file
+ */
 
 void *read_pos_file(void *pth)
 {
@@ -423,11 +404,16 @@ void *read_pos_file(void *pth)
     char buf[256] = {0,};
     unsigned int i = 0;
     //unsigned int frame_size = 0;
-    char *buff;
+    char *buff = NULL;
     printf("\n File path is %s", path);
+    int nItemsread;
 
     fp = fopen(path, "r");
 
+    if(fp == NULL){
+        ERROR(" File open error!! \n");
+        return NULL;
+    }
     // estimate the memory size needed for a frame from pos file. Reads the first three lines.
     while(fgets(buf, 256, (FILE *)fp) != NULL){
         //printf("strlen(buf) is %d", strlen(buf));
@@ -449,18 +435,32 @@ void *read_pos_file(void *pth)
 	    break;
     }
 
-#if 1
+#if DEBUG
     for(i = 0; i < 10; i++)
         printf("%c", buf[i]);
 #endif
 
-//    fclose(fp);
     printf("memory size req for a frame is %d", frame_size); 
     fseek(fp, 0, SEEK_SET);
-
+    // consumer thread (thread 2) should wait till the data is ready
+    // file data is read in chunks and each chunk is of the size of 50 frames
+    // this helps in deallocating the memory once the processing is done
+    // first 50 frames from the pos file is read and condition is signalled to thread 2
     pthread_mutex_lock(&cond_var_lock);
     buff = (char *)malloc(frame_size * 50 * sizeof(char));
-    fread(buff, sizeof(char), frame_size * 50, fp);
+
+    if(buff == NULL){
+        ERROR("Memory allocation failed!! \n");
+        return NULL;
+    }
+
+    nItemsread = fread(buff, sizeof(char), frame_size * 50, fp);
+ 
+    if(nItemsread != frame_size * 50){
+        ERROR("Req number of frame data is not in the pos file! \n");
+        return NULL;
+    }
+
     frame_bufs[0] = buff;
     pthread_cond_signal(&cond_var);
     pthread_mutex_unlock(&cond_var_lock);
@@ -468,12 +468,28 @@ void *read_pos_file(void *pth)
     for(i = 1; i < 10; i++)
     {
         buff = (char *)malloc(frame_size * 50 * sizeof(char));
-	fread(buff, sizeof(char), frame_size * 50, fp);
+
+        if(buff == NULL){
+	    ERROR("Memory allocation failed!! \n");
+            return NULL;
+        }
+
+        nItemsread = fread(buff, sizeof(char), frame_size * 50, fp);
+
+        if(nItemsread != frame_size * 50){
+	    ERROR("Req number of frame data is not in the pos file! \n");
+            return NULL;
+        }
+
         frame_bufs[i] = buff;
     }
+
     fclose(fp);
 }
 
+/**
+ * Program main
+ */
 
 int main(int argc, char *argv[])
 {
@@ -483,6 +499,7 @@ int main(int argc, char *argv[])
     char cwd[PATH_MAX];
     char file_path[PATH_MAX + strlen(pos_file_name)];
 
+    // File path, where the pos, frc and ener file is located should be given
     if(argc == 1)
     {    
         printf("Program expects the directory name where pos/frc/ener file is located");
@@ -491,9 +508,10 @@ int main(int argc, char *argv[])
 
     if (getcwd(cwd, sizeof(cwd)) != NULL) {
         printf("Current working dir: %s\n", cwd);
-    } else {
-       perror("getcwd() error");
-       return 1;
+    } 
+    else {
+        perror("getcwd() error");
+        return -1;
     }
 
     //printf("cwd is %s", cwd);
@@ -504,7 +522,8 @@ int main(int argc, char *argv[])
     strcat(file_path, pos_file_name);
     printf("\n file_path is %s", file_path);
 
-// launch the thread which reads data from the pos file and stores in small buffers.
+    // thread1 reads the pos file
+    // thread2 parses the pos file
     ret1 = pthread_create( &thread1, NULL, read_pos_file, (void *)file_path);     
     ret2 = pthread_create( &thread2, NULL, parse_pos_file, (void *)NULL);
 

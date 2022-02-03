@@ -1,3 +1,4 @@
+// System includes
 #include<stdio.h>
 #include<pthread.h>
 #include<unistd.h>
@@ -6,11 +7,17 @@
 #include<stdlib.h>
 #include<math.h>
 
+// DEFINES 
 #define NUM_ATOMS 81
 #define DEBUG 0
 #define ERROR(msg)\
     fprintf(stderr, "%s,%d ", __func__, __LINE__);\
     fprintf(stderr, "%s", msg);
+#define PLACE_HOLDER1 4
+#define PLACE_HOLDER2 30
+#define PLACE_HOLDER3 56
+#define LINE_SPLIT_SIZE 25
+
 
 extern __global__ void coulombMatrix(double *pos, double *col, int *chargeptr, int nx, int ny, int cutoff, double bc);
 extern __global__ void coulombMatrixLT(double *col, int nx, int ny);
@@ -32,13 +39,16 @@ unsigned int line3_size;
 
 //cudaStream_t streams[NTHREADS];
 
+/*
+ * Function that parses a position frame, creates the coulomb matrix, spawns submatrices and calculates eigen values
+ * for each submatrix
+ */
 void *main_job_cuda(void *count)
 {
-
-// parser for each frame
+    // parser for each frame
     double frame[NUM_ATOMS][3];
     unsigned int j = 0;
-    char temp1[25], temp2[25], temp3[25];
+    char temp1[LINE_SPLIT_SIZE], temp2[LINE_SPLIT_SIZE], temp3[LINE_SPLIT_SIZE];
     unsigned int cnt = *(int *)count;
     char *buf;
     unsigned int i;
@@ -67,25 +77,22 @@ void *main_job_cuda(void *count)
     int dim;
     int *d_cont;
  
-    //if(cnt == 0)
-    //    return NULL;
-  
     den_1 = 0;
     den_2 = 0;
     den_3 = 0;
-    //fflush(stdout);
-    //printf(" val %d ", *(int *)count);
     printf("\n main job thread # %d", cnt);
     //cudaStreamCreate(&streams[cnt]);
+
+    // nth thread picks nth frame
     buf = frame_bufs[0] + cnt * frame_size + line1_size + line2_size;
-    //i += line1_size + line2_size;
+
+    //loop which parses the frames x, y, z coordinates and stores in an array
+    // terms such as 'E-003' are taken care 
     while(j < NUM_ATOMS){
-        memcpy(temp1, buf + 4, 25);
-        memcpy(temp2, buf + 30, 25);
-        memcpy(temp3, buf + 56, 25);
-        //for(i = 0; i < 18; i++)
-        //    printf(" %c", temp3[i]);
-        //printf("\n");
+        memcpy(temp1, buf + PLACE_HOLDER1, LINE_SPLIT_SIZE);
+        memcpy(temp2, buf + PLACE_HOLDER2, LINE_SPLIT_SIZE);
+        memcpy(temp3, buf + PLACE_HOLDER3, LINE_SPLIT_SIZE);
+
 	if(temp1[20] == 'E')
 	    den_1 = temp1[24] - '0';
 
@@ -112,7 +119,7 @@ void *main_job_cuda(void *count)
         buf += line3_size;
     }
 
-#if 1
+    #if DEBUG
     if(cnt == 49){
     for(j = 0; j < NUM_ATOMS; j++){
         for(i = 0; i < 3; i++){
@@ -120,9 +127,9 @@ void *main_job_cuda(void *count)
             }
         printf("\n");
     }}
-#endif
+    #endif
 
-// coloumb matrix creation
+    // coloumb matrix creation
     j = 0;
     for(i=0; i<(sizeof(charge_arr)/sizeof(int)); i++)
     {
@@ -131,68 +138,68 @@ void *main_job_cuda(void *count)
         if(j == 3)
             j=0;
     }
+
     for(i=0; i<(sizeof(charge_arr)/sizeof(int)); i++)
     {
         printf(" %d", charge_arr[i]);
     }
 
+    // allocate memory for the frame in the gpu
     status = cudaMalloc((double **)&posptr, NUM_ATOMS*3*sizeof(double));
-    //status = cudaMalloc((double **)&posptr, NUM_ATOMS*3*sizeof(double),stream[cnt]);
     if( status != cudaSuccess) {
         fprintf(stderr, " Could not allocate memory on the device!!");
     }
 
+    // allocate memory for the coulomb matrix in the gpu
     status = cudaMalloc((double **)&colptr, NUM_ATOMS*NUM_ATOMS*sizeof(double));
-    //status = cudaMalloc((double **)&colptr, NUM_ATOMS*NUM_ATOMS*sizeof(double),stream[cnt]);
     if( status != cudaSuccess) {
         fprintf(stderr, " Could not allocate memory on the device!!");
     }
 
+    // allocate memory for the charge array in the gpu
     status = cudaMalloc((int **)&chargptr, NUM_ATOMS*sizeof(int));
-    //status = cudaMalloc((int **)&chargptr, NUM_ATOMS*sizeof(int),stream[cnt]);
     if( status != cudaSuccess) {
         fprintf(stderr, " Could not allocate memory on the device!!");
     }
 
+    // allocate memory for submat in the gpu
+    // submat contains necessary information to create submatrices for the coulomb matrix
     status = cudaMalloc((int **)&submat, NUM_ATOMS*sizeof(int));
-    //status = cudaMalloc((int **)&submat, NUM_ATOMS*sizeof(int),stream[cnt]);
     if( status != cudaSuccess) {
         fprintf(stderr, " Could not allocate memory on the device!!");
     }
 
+    // frame in copied from main memory to gpu memory
     status = cudaMemcpy(posptr, frame, NUM_ATOMS*3*sizeof(double), cudaMemcpyHostToDevice);
-    //status = cudaMemcpy(posptr, frame, NUM_ATOMS*3*sizeof(double), cudaMemcpyHostToDevice,stream[cnt]);
     if( status != cudaSuccess) {
         fprintf(stderr, " Could not copy the position array to the device!!");
     }
 
+    // coulomb matrix in the gpu is zero initialized
     status = cudaMemcpy(colptr, col, NUM_ATOMS*NUM_ATOMS*sizeof(double), cudaMemcpyHostToDevice);
-    //status = cudaMemcpy(colptr, col, NUM_ATOMS*NUM_ATOMS*sizeof(double), cudaMemcpyHostToDevice,stream[cnt]);
     if( status != cudaSuccess) {
         fprintf(stderr, " Could not copy the position array to the device!!");
     }
 
+    // charge array is copied from main memory to gpu memory
     status = cudaMemcpy(chargptr, charge_arr, NUM_ATOMS*sizeof(int), cudaMemcpyHostToDevice);
-    //status = cudaMemcpy(chargptr, charge_arr, NUM_ATOMS*sizeof(int), cudaMemcpyHostToDevice,stream[cnt]);
     if( status != cudaSuccess) {
         fprintf(stderr, " Could not copy the position array to the device!!");
     }
 
+    // !! invoke the coulomb matrix creation cuda kernel !!
     coulombMatrix <<< grid, block >>>(posptr, colptr, chargptr, nx, ny, rcut, bc);
-    //coulombMatrix <<< grid, block, 0, streams[cnt] >>>(posptr, colptr, chargptr, nx, ny, rcut, bc);
     cudaDeviceSynchronize();
-    //cudaStreamSynchronize(0);
+    // !! invoke the coulomb matrix lower triangler populate kernel !!
     coulombMatrixLT <<< grid, block >>>(colptr, nx, ny);
-    //coulombMatrixLT <<< grid, block, 0, streams[cnt] >>>(colptr, nx, ny);
     cudaDeviceSynchronize();
-    //cudaStreamSynchronize(0);
 
     status = cudaMemcpy(col, colptr, NUM_ATOMS*NUM_ATOMS*sizeof(double), cudaMemcpyDeviceToHost);
-    //status = cudaMemcpy(col, colptr, NUM_ATOMS*NUM_ATOMS*sizeof(double), cudaMemcpyDeviceToHost, stream[cnt]);
     if( status != cudaSuccess) {
         fprintf(stderr, " Could not copy the position array to the host!!");
     }
 
+    #if DEBUG
     //if(cnt == 49){
     //print the composed coulomb matrix
     printf("\n couloumb matrix thread #%d\n", cnt);
@@ -206,31 +213,34 @@ void *main_job_cuda(void *count)
         //printf("\n");
     }
     //}
+    #endif
 
-#if 1
+    // memory intensive operation starts here. allowing only 1 thread from here to create submatrices and eigen values.
     pthread_mutex_lock(&crit_lock);
 
+    // copy the coulomb matrix to the gpu memory
     status = cudaMemcpy(colptr, col, NUM_ATOMS*NUM_ATOMS*sizeof(double), cudaMemcpyHostToDevice);
     if( status != cudaSuccess) {
         fprintf(stderr, " Could not copy the coulomb matrix array to the host!!");
     }
 
-//submatrix creation
+    //submatrix creation
     submatrix <<< 1, 100 >>>(colptr, nx, submat);
-    //submatrix <<< 1, 100, 0, streams[cnt] >>>(colptr, nx, submat);
     cudaDeviceSynchronize();
-    //cudaStreamSynchronize(0);
 
+    //copy submat matrix to the host from gpu
+    // submat is an array of NUM_ATOMS size where every ith element contains the number of zeros in the ith row/col.
     status = cudaMemcpy(submatsize, submat, NUM_ATOMS*sizeof(int), cudaMemcpyDeviceToHost);
     if( status != cudaSuccess) {
         fprintf(stderr, " Could not copy the submat sizes array to the host!!");
     }
 
+    #if DEBUG
     printf("\n\n first submat half size %d\n\n", submatsize[0]);
+    #endif 
 
     int num = 0;
 
-    //pthread_mutex_lock(&crit_lock);
     printf(" comes in #%d", cnt);
 
     while(num < NUM_ATOMS){
@@ -245,23 +255,22 @@ void *main_job_cuda(void *count)
             fprintf(stderr, " Could not allocate memory for submatrix!!");
 
         copysubmat <<< 1, 1 >>>(submat1, submatsize[num], num);
-	//copysubmat <<< 1, 1, 0, streams[cnt] >>>(submat1, submatsize[num], num);
-        //cudaDeviceSynchronize();
-	//cudaStreamSynchronize(0);
 
         status = cudaMemcpy(bufptr, submat1, submatsize[num]*submatsize[num]*sizeof(double), cudaMemcpyDeviceToHost);
         if( status != cudaSuccess) {
             fprintf(stderr, " Could not copy the submat sizes array to the host!!");
         }
 
-        //printf("\n 1st submatrix \n");
+        #if DEBUG
+        printf("\n submatrix \n");
         //print the 1st submatrix
-        //for(i=0; i< submatsize[0]; i++){
-        //    for(j=0; j<submatsize[0]; j++){
-        //        printf(" %lf", *(bufptr+i*submatsize[0]+j));
-        //        }
-        //    printf("\n");
-        //}
+        for(i=0; i< submatsize[0]; i++){
+            for(j=0; j<submatsize[0]; j++){
+                printf(" %lf", *(bufptr+i*submatsize[0]+j));
+            }
+            printf("\n");
+        }
+        #endif
 
         cudaMalloc((void**) &d_cont, sizeof(int));
         cudaMemcpy(d_cont, &cont, sizeof(int), cudaMemcpyHostToDevice);
@@ -293,7 +302,6 @@ void *main_job_cuda(void *count)
         }
         printf("\n n %d\n", n);
 
-        #if 1
         status = cudaMemcpy(submat1, bufptr, submatsize[num]*submatsize[num]*sizeof(double), cudaMemcpyHostToDevice);
         if( status != cudaSuccess) {
             fprintf(stderr, " Could not copy the submat array to the host!!");
@@ -305,14 +313,11 @@ void *main_job_cuda(void *count)
         }
 
         jacobi<<<1, n/2>>>(submat1, d_pair, submatsize[num], d_cont, tolerance);
-	//jacobi<<<1, n/2, 0, streams[cnt]>>>(submat1, d_pair, submatsize[num], d_cont, tolerance);
-	//cudaDeviceSynchronize();
-        //cudaStreamSynchronize(0);
 
         cudaMemcpy(bufptr, submat1, submatsize[num]*submatsize[num]*sizeof(double), cudaMemcpyDeviceToHost);
 
         printf("\n\n eigen values here for #%d", cnt);
-    //print the 1st submatrix
+        //print the 1st submatrix
         for(i=0; i< submatsize[num]; i++){
             for(j=0; j<submatsize[num]; j++){
 	      if(i == j)
@@ -326,16 +331,12 @@ void *main_job_cuda(void *count)
         cudaFree(submat1);
         free(bufptr);
         free(pair);
-    #endif
     }
 
     pthread_mutex_unlock(&crit_lock);
-
-#endif    
     cudaFree(posptr);
     cudaFree(colptr);
     cudaFree(chargptr);
-
 }
 
 /**

@@ -9,7 +9,7 @@ coulomb      -- generates coulomb matrix<br/>
 submatrix    -- sparse coulomb matrix is divided to smaller submatrices<br/>
 jacobi-eigen -- calculates eigen values for a symmetric matrix 
 
-**ongoing**
+**ongoing project**
 
 ## References
 <a id="1">[1]</a> 

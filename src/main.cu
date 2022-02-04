@@ -18,7 +18,6 @@
 #define PLACE_HOLDER3 56
 #define LINE_SPLIT_SIZE 25
 
-
 extern __global__ void coulombMatrix(double *pos, double *col, int *chargeptr, int nx, int ny, int cutoff, double bc);
 extern __global__ void coulombMatrixLT(double *col, int nx, int ny);
 extern __global__ void jacobi(double *arr_ptr, int *pair_arr, int n, int *cont, double tolerance);
@@ -36,8 +35,6 @@ unsigned int line2_size;
 unsigned int line3_size;
 
 #define NTHREADS 3
-
-//cudaStream_t streams[NTHREADS];
 
 /*
  * Function that parses a position frame, creates the coulomb matrix, spawns submatrices and calculates eigen values
@@ -81,7 +78,6 @@ void *main_job_cuda(void *count)
     den_2 = 0;
     den_3 = 0;
     printf("\n main job thread # %d", cnt);
-    //cudaStreamCreate(&streams[cnt]);
 
     // nth thread picks nth frame
     buf = frame_bufs[0] + cnt * frame_size + line1_size + line2_size;
@@ -95,10 +91,8 @@ void *main_job_cuda(void *count)
 
 	if(temp1[20] == 'E')
 	    den_1 = temp1[24] - '0';
-
         if(temp2[20] == 'E')
 	    den_2 = temp2[24] - '0';
-
         if(temp3[20] == 'E')
 	    den_3 = temp3[24] - '0';
 	    
@@ -108,10 +102,8 @@ void *main_job_cuda(void *count)
  
         if(!den_1)
 	    frame[j][0] /= pow(10, den_1);
-
         if(!den_2)
 	    frame[j][1] /= pow(10, den_2);
-
         if(!den_3)
 	    frame[j][2] /= pow(10, den_3);
 
@@ -138,7 +130,6 @@ void *main_job_cuda(void *count)
         if(j == 3)
             j=0;
     }
-
     for(i=0; i<(sizeof(charge_arr)/sizeof(int)); i++)
     {
         printf(" %d", charge_arr[i]);
@@ -149,38 +140,32 @@ void *main_job_cuda(void *count)
     if( status != cudaSuccess) {
         fprintf(stderr, " Could not allocate memory on the device!!");
     }
-
     // allocate memory for the coulomb matrix in the gpu
     status = cudaMalloc((double **)&colptr, NUM_ATOMS*NUM_ATOMS*sizeof(double));
     if( status != cudaSuccess) {
         fprintf(stderr, " Could not allocate memory on the device!!");
     }
-
     // allocate memory for the charge array in the gpu
     status = cudaMalloc((int **)&chargptr, NUM_ATOMS*sizeof(int));
     if( status != cudaSuccess) {
         fprintf(stderr, " Could not allocate memory on the device!!");
     }
-
     // allocate memory for submat in the gpu
     // submat contains necessary information to create submatrices for the coulomb matrix
     status = cudaMalloc((int **)&submat, NUM_ATOMS*sizeof(int));
     if( status != cudaSuccess) {
         fprintf(stderr, " Could not allocate memory on the device!!");
     }
-
     // frame in copied from main memory to gpu memory
     status = cudaMemcpy(posptr, frame, NUM_ATOMS*3*sizeof(double), cudaMemcpyHostToDevice);
     if( status != cudaSuccess) {
         fprintf(stderr, " Could not copy the position array to the device!!");
     }
-
     // coulomb matrix in the gpu is zero initialized
     status = cudaMemcpy(colptr, col, NUM_ATOMS*NUM_ATOMS*sizeof(double), cudaMemcpyHostToDevice);
     if( status != cudaSuccess) {
         fprintf(stderr, " Could not copy the position array to the device!!");
     }
-
     // charge array is copied from main memory to gpu memory
     status = cudaMemcpy(chargptr, charge_arr, NUM_ATOMS*sizeof(int), cudaMemcpyHostToDevice);
     if( status != cudaSuccess) {
@@ -217,7 +202,6 @@ void *main_job_cuda(void *count)
 
     // memory intensive operation starts here. allowing only 1 thread from here to create submatrices and eigen values.
     pthread_mutex_lock(&crit_lock);
-
     // copy the coulomb matrix to the gpu memory
     status = cudaMemcpy(colptr, col, NUM_ATOMS*NUM_ATOMS*sizeof(double), cudaMemcpyHostToDevice);
     if( status != cudaSuccess) {
@@ -240,22 +224,18 @@ void *main_job_cuda(void *count)
     #endif 
 
     int num = 0;
-
     printf(" comes in #%d", cnt);
-
     while(num < NUM_ATOMS){
         //verify the working of jacobi eigen solver for the first submatrix
         status = cudaMalloc((double **)&submat1, submatsize[num]*submatsize[num]*sizeof(double));
         if( status != cudaSuccess) {
             fprintf(stderr, " Could not allocate memory on the device!!");
         }
-
         bufptr = (double *)malloc(submatsize[num]*submatsize[num]*sizeof(double));
         if(!bufptr)
             fprintf(stderr, " Could not allocate memory for submatrix!!");
 
         copysubmat <<< 1, 1 >>>(submat1, submatsize[num], num);
-
         status = cudaMemcpy(bufptr, submat1, submatsize[num]*submatsize[num]*sizeof(double), cudaMemcpyDeviceToHost);
         if( status != cudaSuccess) {
             fprintf(stderr, " Could not copy the submat sizes array to the host!!");
@@ -274,7 +254,6 @@ void *main_job_cuda(void *count)
 
         cudaMalloc((void**) &d_cont, sizeof(int));
         cudaMemcpy(d_cont, &cont, sizeof(int), cudaMemcpyHostToDevice);
-
         dim = submatsize[num];
 
         if(dim % 2 == 0){
@@ -289,7 +268,6 @@ void *main_job_cuda(void *count)
         if( status != cudaSuccess) {
             fprintf(stderr, " Could not allocate pair memory on the device!!");
         }
-
         if(dim % 2 == 0){
             /*initializing pair matrix*/
             for (i = 0; i < n; i++)
@@ -301,21 +279,17 @@ void *main_job_cuda(void *count)
             *(pair + n - 1) = 999;
         }
         printf("\n n %d\n", n);
-
         status = cudaMemcpy(submat1, bufptr, submatsize[num]*submatsize[num]*sizeof(double), cudaMemcpyHostToDevice);
         if( status != cudaSuccess) {
             fprintf(stderr, " Could not copy the submat array to the host!!");
         }
-
         status = cudaMemcpy(d_pair, pair, n*sizeof(int), cudaMemcpyHostToDevice);
         if( status != cudaSuccess) {
             fprintf(stderr, " Could not copy the pair array to the host!!");
         }
 
         jacobi<<<1, n/2>>>(submat1, d_pair, submatsize[num], d_cont, tolerance);
-
         cudaMemcpy(bufptr, submat1, submatsize[num]*submatsize[num]*sizeof(double), cudaMemcpyDeviceToHost);
-
         printf("\n\n eigen values here for #%d", cnt);
         //print the 1st submatrix
         for(i=0; i< submatsize[num]; i++){
@@ -332,7 +306,6 @@ void *main_job_cuda(void *count)
         free(bufptr);
         free(pair);
     }
-
     pthread_mutex_unlock(&crit_lock);
     cudaFree(posptr);
     cudaFree(colptr);
@@ -354,18 +327,18 @@ void *parse_pos_file(void *arg)
     printf(" Thread 2");
     // cond_wait
     pthread_mutex_lock(&cond_var_lock);
-
     while(frame_bufs[0] == 0)
         pthread_cond_wait(&cond_var, &cond_var_lock);
 
     pthread_mutex_unlock(&cond_var_lock);
 
+    #if DEBUG
     //printf("\n comes here --1");
     //printf("\n");
     //buf = frame_bufs[0];
     //for(i = 0; i < 100; i++)
     //    printf("%c", *(buf+i));
-
+    #endif
    
     // launch 50 threads which parses the pos frame buffer and performs cuda operations in parallel.
     // each of the thread creates the coulomb matrix, does submatrix reductions and computes eigen values.
@@ -381,7 +354,6 @@ void *parse_pos_file(void *arg)
 	    return (void *)NULL;
 	}
     }
-
     for(i = 0; i < NTHREADS; i++)
     {
         if(pthread_join(threads[i], &retvals[i]) != 0)
@@ -390,7 +362,6 @@ void *parse_pos_file(void *arg)
 	    return (void *)NULL;
 	}
     }
-
 }
 
 /*
@@ -409,7 +380,6 @@ void *read_pos_file(void *pth)
     int nItemsread;
 
     fp = fopen(path, "r");
-
     if(fp == NULL){
         ERROR(" File open error!! \n");
         return NULL;
@@ -418,7 +388,6 @@ void *read_pos_file(void *pth)
     while(fgets(buf, 256, (FILE *)fp) != NULL){
         //printf("strlen(buf) is %d", strlen(buf));
 	i++;
-
 	if(i == 1){
 	    frame_size += strlen(buf);
 	    line1_size = strlen(buf);
@@ -435,10 +404,10 @@ void *read_pos_file(void *pth)
 	    break;
     }
 
-#if DEBUG
+    #if DEBUG
     for(i = 0; i < 10; i++)
         printf("%c", buf[i]);
-#endif
+    #endif
 
     printf("memory size req for a frame is %d", frame_size); 
     fseek(fp, 0, SEEK_SET);
@@ -448,23 +417,18 @@ void *read_pos_file(void *pth)
     // first 50 frames from the pos file is read and condition is signalled to thread 2
     pthread_mutex_lock(&cond_var_lock);
     buff = (char *)malloc(frame_size * 50 * sizeof(char));
-
     if(buff == NULL){
         ERROR("Memory allocation failed!! \n");
         return NULL;
     }
-
     nItemsread = fread(buff, sizeof(char), frame_size * 50, fp);
- 
     if(nItemsread != frame_size * 50){
         ERROR("Req number of frame data is not in the pos file! \n");
         return NULL;
     }
-
     frame_bufs[0] = buff;
     pthread_cond_signal(&cond_var);
     pthread_mutex_unlock(&cond_var_lock);
-
     for(i = 1; i < 10; i++)
     {
         buff = (char *)malloc(frame_size * 50 * sizeof(char));
@@ -475,15 +439,12 @@ void *read_pos_file(void *pth)
         }
 
         nItemsread = fread(buff, sizeof(char), frame_size * 50, fp);
-
         if(nItemsread != frame_size * 50){
 	    ERROR("Req number of frame data is not in the pos file! \n");
             return NULL;
         }
-
         frame_bufs[i] = buff;
     }
-
     fclose(fp);
 }
 
@@ -505,7 +466,6 @@ int main(int argc, char *argv[])
         printf("Program expects the directory name where pos/frc/ener file is located");
         return -1;
     }
-
     if (getcwd(cwd, sizeof(cwd)) != NULL) {
         printf("Current working dir: %s\n", cwd);
     } 
@@ -526,9 +486,7 @@ int main(int argc, char *argv[])
     // thread2 parses the pos file
     ret1 = pthread_create( &thread1, NULL, read_pos_file, (void *)file_path);     
     ret2 = pthread_create( &thread2, NULL, parse_pos_file, (void *)NULL);
-
     pthread_join(thread1, NULL);
     pthread_join(thread2, NULL);
-
     return 0;
 }

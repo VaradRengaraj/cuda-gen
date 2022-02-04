@@ -9,6 +9,8 @@ coulomb      -- generates coulomb matrix<br/>
 submatrix    -- sparse coulomb matrix is divided to smaller submatrices<br/>
 jacobi-eigen -- calculates eigen values for a symmetric matrix 
 
+**ongoing**
+
 ## References
 <a id="1">[1]</a> 
 https://singroup.github.io/dscribe/0.3.x/tutorials/coulomb_matrix.html.<br/>

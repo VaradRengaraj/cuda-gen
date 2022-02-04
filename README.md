@@ -1,2 +1,6 @@
-# cuda-gen
-Cuda based dataset generation for the project Gen_PES_Pred
+cuda-gen
+========
+
+![Image description](https://github.com/VaradRengaraj/cuda-gen/blob/main/utils/image.png)
+
+

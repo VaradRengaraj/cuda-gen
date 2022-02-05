@@ -4,12 +4,17 @@
 
 This project is a small offshoot from Gen_PES_Pred(https://github.com/VaradRengaraj/Gen_PES_Pred). In Gen_PES_Pred, as part of the dataset generation process, a large file containing the coordinate frames of the atoms is parsed and for each frame, a coulomb matrix[[1]](#1) is generated. This coulomb matrix is then sparsified and the resultant sparse coulomb matrix is divided into several dense smaller submatrices[[2]](#2). The eigenvalues for the submatrices are calculated and each of these eigenvalues vectors are stored in an HDF5 file. A single-threaded, serially running code executing this data generation process is time-consuming and hence a multithreaded Cuda-based approach is explored. 
 
-### Kernels
-coulomb      -- generates coulomb matrix<br/>
-submatrix    -- sparse coulomb matrix is divided to smaller submatrices<br/>
-jacobi-eigen -- calculates eigen values for a symmetric matrix 
+## Kernels
 
-**ongoing project**
+| Kernel Name | Description                         |
+| ----------  | ----------------------------------  |
+| coulomb     | Generates coulomb matrix            |
+| submatrix   | Sparse coulomb matrix is divided    |
+|             | to smaller submatrices              |
+|jacobi-eigen | Calculates eigen values for a       |
+|             | symmetric matrix                    |
+
+**This is an ongoing project**
 
 ## References
 <a id="1">[1]</a> 
